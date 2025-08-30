@@ -143,8 +143,9 @@
 				if (!dayNames[day]) return;
 				const { ab, cd, tco } = assignments[day];
 					html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
-					html += `<div class=\"group\"><strong>A/B</strong><ol>${ab.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
-					html += `<div class=\"group\"><strong>C/D</strong><ol>${cd.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+					// Always show 4 slots for A/B and C/D
+					html += `<div class=\"group\"><strong>A/B</strong><ol>${Array.from({length: 4}, (_,i) => ab[i] ? `<li>${ab[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
+					html += `<div class=\"group\"><strong>C/D</strong><ol>${Array.from({length: 4}, (_,i) => cd[i] ? `<li>${cd[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
 					html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
 
 					// Show unused names
