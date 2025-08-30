@@ -69,15 +69,9 @@
 				tcoPositions[day][name] = slot;
 				tcoSlots = tcoSlots.filter(s => s !== slot);
 			});
-			// For A/B and C/D, assign so that both have the same number of people (as even as possible)
-			// Remove TCO from shuffled list
-			let remaining = shuffled.slice(2);
-			let abCount = Math.floor(remaining.length / 2);
-			let cdCount = remaining.length - abCount;
-			// If odd, ab gets the extra
-			if (cdCount > abCount) [abCount, cdCount] = [cdCount, abCount];
-			let ab = Array(abCount).fill(null);
-			let cd = Array(cdCount).fill(null);
+			// For A/B and C/D, assign so that no name is in the same slot as previous days
+			let ab = Array(4).fill(null);
+			let cd = Array(4).fill(null);
 			if (!abPositions[day]) abPositions[day] = {};
 			if (!cdPositions[day]) cdPositions[day] = {};
 			let abUsed = {};
@@ -94,9 +88,16 @@
 					cdUsed[name].add(pos);
 				});
 			});
-			// Assign A/B
-			let abCandidates = remaining.slice(0, abCount);
-			let abSlots = Array.from({length: abCount}, (_, i) => i);
+			// Split remaining names as evenly as possible between A/B and C/D
+			let remaining = shuffled;
+			let half = Math.ceil(remaining.length / 2);
+			let abCandidates = remaining.slice(0, half);
+			let cdCandidates = remaining.slice(half);
+			// Pad with nulls if needed for display
+			let abCount = abCandidates.length;
+			let cdCount = cdCandidates.length;
+			let abSlots = Array.from({length: abCount}, (_,i)=>i);
+			let cdSlots = Array.from({length: cdCount}, (_,i)=>i);
 			abSlots = shuffle(abSlots);
 			abCandidates.forEach(name => {
 				let possible = abSlots.filter(slot => !(abUsed[name] && abUsed[name].has(slot)));
@@ -105,9 +106,6 @@
 				abPositions[day][name] = slot;
 				abSlots = abSlots.filter(s => s !== slot);
 			});
-			// Assign C/D
-			let cdCandidates = remaining.slice(abCount, abCount + cdCount);
-			let cdSlots = Array.from({length: cdCount}, (_, i) => i);
 			cdSlots = shuffle(cdSlots);
 			cdCandidates.forEach(name => {
 				let possible = cdSlots.filter(slot => !(cdUsed[name] && cdUsed[name].has(slot)));
@@ -144,11 +142,20 @@
 			days.forEach(day => {
 				if (!dayNames[day]) return;
 				const { ab, cd, tco } = assignments[day];
-				html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
-				html += `<div class=\"group\"><strong>A/B</strong><ol>${ab.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
-				html += `<div class=\"group\"><strong>C/D</strong><ol>${cd.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
-				html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
-				html += `</div></div>`;
+					html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
+					html += `<div class=\"group\"><strong>A/B</strong><ol>${ab.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+					html += `<div class=\"group\"><strong>C/D</strong><ol>${cd.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+					html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+
+					// Show unused names
+					const usedNames = new Set([...ab, ...cd, ...tco].filter(Boolean));
+					const allNames = dayNames[day];
+					const unused = allNames.filter(n => !usedNames.has(n));
+					if (unused.length > 0) {
+						html += `<div class=\"group unused-names\"><strong>Unused</strong><ol>${unused.map(n=>`<li>${n}</li>`).join('')}</ol></div>`;
+					}
+
+					html += `</div></div>`;
 			});
 		}
 		if (!valid) {
