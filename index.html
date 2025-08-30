@@ -48,34 +48,17 @@
 		Object.keys(dayNames).forEach(day => {
 			const names = dayNames[day];
 			let shuffled = shuffle([...names]);
-			// Assign TCO with unique positions for the week
-			let tco = Array(2).fill(null);
-			if (!tcoPositions[day]) tcoPositions[day] = {};
-			// Build a map of name to used TCO positions for the week so far
-			let tcoUsed = {};
-			Object.keys(tcoPositions).forEach(d => {
-				Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
-					tcoUsed[name] = tcoUsed[name] || new Set();
-					tcoUsed[name].add(pos);
-				});
-			});
-			let tcoCandidates = shuffled.splice(0, 2);
-			let tcoSlots = [0,1];
-			tcoSlots = shuffle(tcoSlots);
-			tcoCandidates.forEach(name => {
-				let possible = tcoSlots.filter(slot => !(tcoUsed[name] && tcoUsed[name].has(slot)));
-				let slot = possible.length ? possible[0] : tcoSlots[0];
-				tco[slot] = name;
-				tcoPositions[day][name] = slot;
-				tcoSlots = tcoSlots.filter(s => s !== slot);
-			});
-			// For A/B and C/D, assign so that no name is in the same slot as previous days
+			// Prioritize filling slot 1&2 of A/B and C/D, then slot 1 of TCO
 			let ab = Array(4).fill(null);
 			let cd = Array(4).fill(null);
+			let tco = Array(2).fill(null);
 			if (!abPositions[day]) abPositions[day] = {};
 			if (!cdPositions[day]) cdPositions[day] = {};
+			if (!tcoPositions[day]) tcoPositions[day] = {};
+			// Build used position maps
 			let abUsed = {};
 			let cdUsed = {};
+			let tcoUsed = {};
 			Object.keys(abPositions).forEach(d => {
 				Object.entries(abPositions[d]).forEach(([name, pos]) => {
 					abUsed[name] = abUsed[name] || new Set();
@@ -88,32 +71,64 @@
 					cdUsed[name].add(pos);
 				});
 			});
-			// Split remaining names as evenly as possible between A/B and C/D
-			let remaining = shuffled;
-			let half = Math.ceil(remaining.length / 2);
-			let abCandidates = remaining.slice(0, half);
-			let cdCandidates = remaining.slice(half);
-			// Pad with nulls if needed for display
-			let abCount = abCandidates.length;
-			let cdCount = cdCandidates.length;
-			let abSlots = Array.from({length: abCount}, (_,i)=>i);
-			let cdSlots = Array.from({length: cdCount}, (_,i)=>i);
-			abSlots = shuffle(abSlots);
-			abCandidates.forEach(name => {
-				let possible = abSlots.filter(slot => !(abUsed[name] && abUsed[name].has(slot)));
-				let slot = possible.length ? possible[0] : abSlots[0];
-				ab[slot] = name;
-				abPositions[day][name] = slot;
-				abSlots = abSlots.filter(s => s !== slot);
+			Object.keys(tcoPositions).forEach(d => {
+				Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
+					tcoUsed[name] = tcoUsed[name] || new Set();
+					tcoUsed[name].add(pos);
+				});
 			});
-			cdSlots = shuffle(cdSlots);
-			cdCandidates.forEach(name => {
-				let possible = cdSlots.filter(slot => !(cdUsed[name] && cdUsed[name].has(slot)));
-				let slot = possible.length ? possible[0] : cdSlots[0];
-				cd[slot] = name;
-				cdPositions[day][name] = slot;
-				cdSlots = cdSlots.filter(s => s !== slot);
-			});
+
+			// Step 1: Fill ab[0], ab[1], cd[0], cd[1]
+			let usedNames = new Set();
+			let nameIdx = 0;
+			// Fill A/B and C/D slots 1 and 2 in order
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					ab[i] = shuffled[nameIdx];
+					abPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
+				}
+			}
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					cd[i] = shuffled[nameIdx];
+					cdPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
+				}
+			}
+			// Fill both TCO slots in order
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					tco[i] = shuffled[nameIdx];
+					tcoPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
+				}
+			}
+			// Split remaining names evenly between A/B and C/D (slots 3 and 4), filling in order
+			let abFill = 2;
+			let cdFill = 2;
+			let toggle = true;
+			while (nameIdx < shuffled.length && (abFill < 4 || cdFill < 4)) {
+				if (abFill < 4 && toggle) {
+					ab[abFill] = shuffled[nameIdx];
+					abPositions[day][shuffled[nameIdx]] = abFill;
+					usedNames.add(shuffled[nameIdx]);
+					abFill++;
+					nameIdx++;
+				} else if (cdFill < 4) {
+					cd[cdFill] = shuffled[nameIdx];
+					cdPositions[day][shuffled[nameIdx]] = cdFill;
+					usedNames.add(shuffled[nameIdx]);
+					cdFill++;
+					nameIdx++;
+				} else {
+					toggle = !toggle;
+				}
+				toggle = !toggle;
+			}
 			results[day] = { ab, cd, tco };
 		});
 		return results;
