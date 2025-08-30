@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Randomized Schedule Groups</title>
+	<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+	<div class="container">
+		<div class="title-box">
+			<h1>Schedule Group Randomizer</h1>
+		</div>
+		<form id="namesForm">
+			<label>Enter up to 20 names for each day (comma or newline separated):</label>
+			<div class="days-inputs">
+				<div class="days-list">
+					<div class="day-input"><span>Monday</span><textarea id="namesInput-Monday" rows="6" maxlength="500" placeholder="e.g. Alice, Bob, Charlie..."></textarea></div>
+					<div class="day-input"><span>Tuesday</span><textarea id="namesInput-Tuesday" rows="6" maxlength="500"></textarea></div>
+					<div class="day-input"><span>Wednesday</span><textarea id="namesInput-Wednesday" rows="6" maxlength="500"></textarea></div>
+					<div class="day-input"><span>Thursday</span><textarea id="namesInput-Thursday" rows="6" maxlength="500"></textarea></div>
+					<div class="day-input"><span>Friday</span><textarea id="namesInput-Friday" rows="6" maxlength="500"></textarea></div>
+					<div class="day-input"><span>Saturday</span><textarea id="namesInput-Saturday" rows="6" maxlength="500"></textarea></div>
+					<div class="day-input"><span>Sunday</span><textarea id="namesInput-Sunday" rows="6" maxlength="500"></textarea></div>
+				</div>
+			</div>
+			<button type="submit">Generate Schedule</button>
+		</form>
+		<div id="results" class="results"></div>
+	</div>
+	<script>
+	// Helper: shuffle array
+	function shuffle(array) {
+		for (let i = array.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[array[i], array[j]] = [array[j], array[i]];
+		}
+		return array;
+	}
+
+	// Assign groups for the week, ensuring no name is in the same position more than once
+	function assignGroupsForWeek(dayNames, groupSizes) {
+		// For each day, assign groups so that no name is in the same position twice that week
+		const abPositions = {};
+		const cdPositions = {};
+		const tcoPositions = {};
+		const results = {};
+		Object.keys(dayNames).forEach(day => {
+			const names = dayNames[day];
+			let shuffled = shuffle([...names]);
+			// Assign TCO with unique positions for the week
+			let tco = Array(2).fill(null);
+			if (!tcoPositions[day]) tcoPositions[day] = {};
+			// Build a map of name to used TCO positions for the week so far
+			let tcoUsed = {};
+			Object.keys(tcoPositions).forEach(d => {
+				Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
+					tcoUsed[name] = tcoUsed[name] || new Set();
+					tcoUsed[name].add(pos);
+				});
+			});
+			let tcoCandidates = shuffled.splice(0, 2);
+			let tcoSlots = [0,1];
+			tcoSlots = shuffle(tcoSlots);
+			tcoCandidates.forEach(name => {
+				let possible = tcoSlots.filter(slot => !(tcoUsed[name] && tcoUsed[name].has(slot)));
+				let slot = possible.length ? possible[0] : tcoSlots[0];
+				tco[slot] = name;
+				tcoPositions[day][name] = slot;
+				tcoSlots = tcoSlots.filter(s => s !== slot);
+			});
+			// For A/B and C/D, assign so that no name is in the same slot as previous days
+			let ab = Array(4).fill(null);
+			let cd = Array(4).fill(null);
+			if (!abPositions[day]) abPositions[day] = {};
+			if (!cdPositions[day]) cdPositions[day] = {};
+			let abUsed = {};
+			let cdUsed = {};
+			Object.keys(abPositions).forEach(d => {
+				Object.entries(abPositions[d]).forEach(([name, pos]) => {
+					abUsed[name] = abUsed[name] || new Set();
+					abUsed[name].add(pos);
+				});
+			});
+			Object.keys(cdPositions).forEach(d => {
+				Object.entries(cdPositions[d]).forEach(([name, pos]) => {
+					cdUsed[name] = cdUsed[name] || new Set();
+					cdUsed[name].add(pos);
+				});
+			});
+			// Assign A/B
+			let abCandidates = shuffled.slice(0, 4);
+			let abSlots = [0,1,2,3];
+			abSlots = shuffle(abSlots);
+			abCandidates.forEach(name => {
+				let possible = abSlots.filter(slot => !(abUsed[name] && abUsed[name].has(slot)));
+				let slot = possible.length ? possible[0] : abSlots[0];
+				ab[slot] = name;
+				abPositions[day][name] = slot;
+				abSlots = abSlots.filter(s => s !== slot);
+			});
+			// Assign C/D
+			let cdCandidates = shuffled.slice(4, 8);
+			let cdSlots = [0,1,2,3];
+			cdSlots = shuffle(cdSlots);
+			cdCandidates.forEach(name => {
+				let possible = cdSlots.filter(slot => !(cdUsed[name] && cdUsed[name].has(slot)));
+				let slot = possible.length ? possible[0] : cdSlots[0];
+				cd[slot] = name;
+				cdPositions[day][name] = slot;
+				cdSlots = cdSlots.filter(s => s !== slot);
+			});
+			results[day] = { ab, cd, tco };
+		});
+		return results;
+	}
+
+	document.getElementById('namesForm').addEventListener('submit', function(e) {
+		e.preventDefault();
+		const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+		const groupSizes = { ab: 4, cd: 4, tco: 2 };
+		let html = '';
+		let valid = false;
+		let dayNames = {};
+		days.forEach(day => {
+			const namesRaw = document.getElementById('namesInput-' + day).value;
+			let names = namesRaw.split(/[\n,]+/).map(n => n.trim()).filter(n => n);
+			if (names.length === 0) return; // skip empty days
+			if (names.length < 2 || names.length > 20) {
+				html += `<div class='day-group'><h2>${day}</h2><div class='error'>Please enter between 2 and 20 names for ${day}.</div></div>`;
+				return;
+			}
+			valid = true;
+			dayNames[day] = names;
+		});
+		if (valid) {
+			const assignments = assignGroupsForWeek(dayNames, groupSizes);
+			days.forEach(day => {
+				if (!dayNames[day]) return;
+				const { ab, cd, tco } = assignments[day];
+				html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
+				html += `<div class=\"group\"><strong>A/B</strong><ol>${ab.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+				html += `<div class=\"group\"><strong>C/D</strong><ol>${cd.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+				html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+				html += `</div></div>`;
+			});
+		}
+		if (!valid) {
+			html = '<div class="error">Please enter at least one valid list of names for a day.</div>';
+		}
+		document.getElementById('results').innerHTML = html;
+	});
+	</script>
+</body>
+</html>
