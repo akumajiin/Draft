@@ -69,9 +69,15 @@
 				tcoPositions[day][name] = slot;
 				tcoSlots = tcoSlots.filter(s => s !== slot);
 			});
-			// For A/B and C/D, assign so that no name is in the same slot as previous days
-			let ab = Array(4).fill(null);
-			let cd = Array(4).fill(null);
+			// For A/B and C/D, assign so that both have the same number of people (as even as possible)
+			// Remove TCO from shuffled list
+			let remaining = shuffled.slice(2);
+			let abCount = Math.floor(remaining.length / 2);
+			let cdCount = remaining.length - abCount;
+			// If odd, ab gets the extra
+			if (cdCount > abCount) [abCount, cdCount] = [cdCount, abCount];
+			let ab = Array(abCount).fill(null);
+			let cd = Array(cdCount).fill(null);
 			if (!abPositions[day]) abPositions[day] = {};
 			if (!cdPositions[day]) cdPositions[day] = {};
 			let abUsed = {};
@@ -89,8 +95,8 @@
 				});
 			});
 			// Assign A/B
-			let abCandidates = shuffled.slice(0, 4);
-			let abSlots = [0,1,2,3];
+			let abCandidates = remaining.slice(0, abCount);
+			let abSlots = Array.from({length: abCount}, (_, i) => i);
 			abSlots = shuffle(abSlots);
 			abCandidates.forEach(name => {
 				let possible = abSlots.filter(slot => !(abUsed[name] && abUsed[name].has(slot)));
@@ -100,8 +106,8 @@
 				abSlots = abSlots.filter(s => s !== slot);
 			});
 			// Assign C/D
-			let cdCandidates = shuffled.slice(4, 8);
-			let cdSlots = [0,1,2,3];
+			let cdCandidates = remaining.slice(abCount, abCount + cdCount);
+			let cdSlots = Array.from({length: cdCount}, (_, i) => i);
 			cdSlots = shuffle(cdSlots);
 			cdCandidates.forEach(name => {
 				let possible = cdSlots.filter(slot => !(cdUsed[name] && cdUsed[name].has(slot)));
