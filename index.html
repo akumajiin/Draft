@@ -40,99 +40,143 @@
 
 	// Assign groups for the week, ensuring no name is in the same position more than once
 	function assignGroupsForWeek(dayNames, groupSizes) {
-		// For each day, assign groups so that no name is in the same position twice that week
-		const abPositions = {};
-		const cdPositions = {};
-		const tcoPositions = {};
-		const results = {};
-		Object.keys(dayNames).forEach(day => {
-			const names = dayNames[day];
-			let shuffled = shuffle([...names]);
-			// Prioritize filling slot 1&2 of A/B and C/D, then slot 1 of TCO
-			let ab = Array(4).fill(null);
-			let cd = Array(4).fill(null);
-			let tco = Array(2).fill(null);
-			if (!abPositions[day]) abPositions[day] = {};
-			if (!cdPositions[day]) cdPositions[day] = {};
-			if (!tcoPositions[day]) tcoPositions[day] = {};
-			// Build used position maps
-			let abUsed = {};
-			let cdUsed = {};
-			let tcoUsed = {};
-			Object.keys(abPositions).forEach(d => {
-				Object.entries(abPositions[d]).forEach(([name, pos]) => {
-					abUsed[name] = abUsed[name] || new Set();
-					abUsed[name].add(pos);
-				});
-			});
-			Object.keys(cdPositions).forEach(d => {
-				Object.entries(cdPositions[d]).forEach(([name, pos]) => {
-					cdUsed[name] = cdUsed[name] || new Set();
-					cdUsed[name].add(pos);
-				});
-			});
-			Object.keys(tcoPositions).forEach(d => {
-				Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
-					tcoUsed[name] = tcoUsed[name] || new Set();
-					tcoUsed[name].add(pos);
-				});
-			});
-
-			// Step 1: Fill ab[0], ab[1], cd[0], cd[1]
-			let usedNames = new Set();
-			let nameIdx = 0;
-			// Fill A/B and C/D slots 1 and 2 in order
-			for (let i = 0; i < 2; i++) {
-				if (nameIdx < shuffled.length) {
-					ab[i] = shuffled[nameIdx];
-					abPositions[day][shuffled[nameIdx]] = i;
-					usedNames.add(shuffled[nameIdx]);
-					nameIdx++;
-				}
-			}
-			for (let i = 0; i < 2; i++) {
-				if (nameIdx < shuffled.length) {
-					cd[i] = shuffled[nameIdx];
-					cdPositions[day][shuffled[nameIdx]] = i;
-					usedNames.add(shuffled[nameIdx]);
-					nameIdx++;
-				}
-			}
-			// Fill both TCO slots in order
-			for (let i = 0; i < 2; i++) {
-				if (nameIdx < shuffled.length) {
-					tco[i] = shuffled[nameIdx];
-					tcoPositions[day][shuffled[nameIdx]] = i;
-					usedNames.add(shuffled[nameIdx]);
-					nameIdx++;
-				}
-			}
-			// Split remaining names evenly between A/B and C/D (slots 3 and 4), filling in order
-			let abFill = 2;
-			let cdFill = 2;
-			let toggle = true;
-			while (nameIdx < shuffled.length && (abFill < 4 || cdFill < 4)) {
-				if (abFill < 4 && toggle) {
-					ab[abFill] = shuffled[nameIdx];
-					abPositions[day][shuffled[nameIdx]] = abFill;
-					usedNames.add(shuffled[nameIdx]);
-					abFill++;
-					nameIdx++;
-				} else if (cdFill < 4) {
-					cd[cdFill] = shuffled[nameIdx];
-					cdPositions[day][shuffled[nameIdx]] = cdFill;
-					usedNames.add(shuffled[nameIdx]);
-					cdFill++;
-					nameIdx++;
-				} else {
-					toggle = !toggle;
-				}
-				toggle = !toggle;
-			}
-			results[day] = { ab, cd, tco };
-		});
-		return results;
-	}
+    const abPositions = {};
+    const cdPositions = {};
+    const tcoPositions = {};
+    const results = {};
+    let dayOrder = Object.keys(dayNames);
+    let prevTCO = {};
+    dayOrder.forEach((day, dayIdx) => {
+        const names = dayNames[day];
+        let shuffled = shuffle([...names]);
+        let ab = Array(4).fill(null);
+        let cd = Array(4).fill(null);
+        let tco = Array(2).fill(null);
+        if (!abPositions[day]) abPositions[day] = {};
+        if (!cdPositions[day]) cdPositions[day] = {};
+        if (!tcoPositions[day]) tcoPositions[day] = {};
+        let usedNames = new Set();
+        let assignedNames = new Set();
+        // --- Place names with '/' in slot 1 of A/B or C/D, randomize group ---
+        let slashNames = shuffled.filter(n => n.includes('/'));
+        let nonSlashNames = shuffled.filter(n => !n.includes('/'));
+        let ab0filled = false;
+        let cd0filled = false;
+        if (slashNames.length > 0) {
+            let groups = ['ab', 'cd'];
+            groups = shuffle(groups);
+            let slashAssigned = new Set();
+            for (let i = 0; i < slashNames.length && i < 2; i++) {
+                if (slashAssigned.has(slashNames[i])) continue;
+                if (groups[i] === 'ab' && !ab0filled) {
+                    ab[0] = slashNames[i];
+                    abPositions[day][slashNames[i]] = 0;
+                    usedNames.add(slashNames[i]);
+                    assignedNames.add(slashNames[i]);
+                    ab0filled = true;
+                    slashAssigned.add(slashNames[i]);
+                } else if (groups[i] === 'cd' && !cd0filled) {
+                    cd[0] = slashNames[i];
+                    cdPositions[day][slashNames[i]] = 0;
+                    usedNames.add(slashNames[i]);
+                    assignedNames.add(slashNames[i]);
+                    cd0filled = true;
+                    slashAssigned.add(slashNames[i]);
+                }
+            }
+        }
+        // Remove slashNames from shuffled for normal filling
+        let fillNames = nonSlashNames.filter(n => !usedNames.has(n));
+        // --- Get previous day's TCO assignments ---
+        let prevTCOset = new Set();
+        if (dayIdx > 0) {
+            let prevDay = dayOrder[dayIdx - 1];
+            let prev = results[prevDay];
+            if (prev && prev.tco) {
+                prev.tco.forEach(n => { if (n) prevTCOset.add(n); });
+            }
+        }
+        // --- Fill A/B and C/D slots 1 and 2, prioritize previous TCO names ---
+        let abFill = ab0filled ? 1 : 0;
+        let cdFill = cd0filled ? 1 : 0;
+        // Prioritize previous TCO names for A/B and C/D
+        let abPriority = fillNames.filter(n => prevTCOset.has(n));
+        let cdPriority = fillNames.filter(n => prevTCOset.has(n) && !abPriority.includes(n));
+        let abRest = fillNames.filter(n => !prevTCOset.has(n));
+        let cdRest = abRest;
+        let abCandidates = abPriority.concat(abRest);
+        let cdCandidates = cdPriority.concat(cdRest);
+        let abIdx = 0, cdIdx = 0;
+        for (; abFill < 2 && abIdx < abCandidates.length; abFill++, abIdx++) {
+            let name = abCandidates[abIdx];
+            if (!assignedNames.has(name)) {
+                ab[abFill] = name;
+                abPositions[day][name] = abFill;
+                usedNames.add(name);
+                assignedNames.add(name);
+            } else {
+                abFill--;
+            }
+        }
+        for (; cdFill < 2 && cdIdx < cdCandidates.length; cdFill++, cdIdx++) {
+            let name = cdCandidates[cdIdx];
+            if (!assignedNames.has(name)) {
+                cd[cdFill] = name;
+                cdPositions[day][name] = cdFill;
+                usedNames.add(name);
+                assignedNames.add(name);
+            } else {
+                cdFill--;
+            }
+        }
+        // --- Fill TCO, avoid consecutive days unless necessary ---
+        let tcoFill = 0;
+        let tcoCandidates = fillNames.filter(n => !assignedNames.has(n) && !prevTCOset.has(n));
+        let tcoFallback = fillNames.filter(n => !assignedNames.has(n) && prevTCOset.has(n));
+        for (let i = 0; i < tcoCandidates.length && tcoFill < 2; i++) {
+            tco[tcoFill] = tcoCandidates[i];
+            tcoPositions[day][tcoCandidates[i]] = tcoFill;
+            usedNames.add(tcoCandidates[i]);
+            assignedNames.add(tcoCandidates[i]);
+            tcoFill++;
+        }
+        for (let i = 0; i < tcoFallback.length && tcoFill < 2; i++) {
+            tco[tcoFill] = tcoFallback[i];
+            tcoPositions[day][tcoFallback[i]] = tcoFill;
+            usedNames.add(tcoFallback[i]);
+            assignedNames.add(tcoFallback[i]);
+            tcoFill++;
+        }
+        // --- Fill remaining A/B and C/D slots ---
+        abFill = ab.indexOf(null);
+        if (abFill === -1) abFill = 2;
+        cdFill = cd.indexOf(null);
+        if (cdFill === -1) cdFill = 2;
+        let restNames = fillNames.filter(n => !assignedNames.has(n));
+        let toggle = true;
+        let idx = 0;
+        while ((abFill < 4 || cdFill < 4) && idx < restNames.length) {
+            let name = restNames[idx];
+            if (abFill < 4 && toggle) {
+                ab[abFill] = name;
+                abPositions[day][name] = abFill;
+                usedNames.add(name);
+                assignedNames.add(name);
+                abFill++;
+            } else if (cdFill < 4) {
+                cd[cdFill] = name;
+                cdPositions[day][name] = cdFill;
+                usedNames.add(name);
+                assignedNames.add(name);
+                cdFill++;
+            }
+            toggle = !toggle;
+            idx++;
+        }
+        results[day] = { ab, cd, tco };
+    });
+    return results;
+}
 
 	document.getElementById('namesForm').addEventListener('submit', function(e) {
 		e.preventDefault();
