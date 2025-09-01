@@ -26,7 +26,7 @@
 			</div>
 			<button type="submit">Generate Schedule</button>
 		</form>
-		<div id="results" class="results"></div>
+		<div id="results-wrapper" class="results-row"><div id="results" class="results"></div></div>
 	</div>
 	<script>
 	// Helper: shuffle array
@@ -45,7 +45,8 @@
     const tcoPositions = {};
     const results = {};
     let dayOrder = Object.keys(dayNames);
-    let prevTCO = {};
+    // Track last group for each slash name to alternate
+    const slashLastGroup = {};
     dayOrder.forEach((day, dayIdx) => {
         const names = dayNames[day];
         let shuffled = shuffle([...names]);
@@ -63,112 +64,114 @@
         let ab0filled = false;
         let cd0filled = false;
         if (slashNames.length > 0) {
-            let groups = ['ab', 'cd'];
-            groups = shuffle(groups);
             let slashAssigned = new Set();
             for (let i = 0; i < slashNames.length && i < 2; i++) {
-                if (slashAssigned.has(slashNames[i])) continue;
-                if (groups[i] === 'ab' && !ab0filled) {
-                    ab[0] = slashNames[i];
-                    abPositions[day][slashNames[i]] = 0;
-                    usedNames.add(slashNames[i]);
-                    assignedNames.add(slashNames[i]);
+                let name = slashNames[i];
+                // Alternate group for this name
+                let lastGroup = slashLastGroup[name] || 'cd'; // Start with ab
+                let nextGroup = lastGroup === 'ab' ? 'cd' : 'ab';
+                if (nextGroup === 'ab' && !ab0filled) {
+                    ab[0] = name;
+                    abPositions[day][name] = 0;
+                    usedNames.add(name);
+                    assignedNames.add(name);
                     ab0filled = true;
-                    slashAssigned.add(slashNames[i]);
-                } else if (groups[i] === 'cd' && !cd0filled) {
-                    cd[0] = slashNames[i];
-                    cdPositions[day][slashNames[i]] = 0;
-                    usedNames.add(slashNames[i]);
-                    assignedNames.add(slashNames[i]);
+                    slashAssigned.add(name);
+                    slashLastGroup[name] = 'ab';
+                } else if (nextGroup === 'cd' && !cd0filled) {
+                    cd[0] = name;
+                    cdPositions[day][name] = 0;
+                    usedNames.add(name);
+                    assignedNames.add(name);
                     cd0filled = true;
-                    slashAssigned.add(slashNames[i]);
+                    slashAssigned.add(name);
+                    slashLastGroup[name] = 'cd';
                 }
             }
         }
         // Remove slashNames from shuffled for normal filling
         let fillNames = nonSlashNames.filter(n => !usedNames.has(n));
-        // --- Get previous day's TCO assignments ---
-        let prevTCOset = new Set();
+        // --- Get previous day's group assignments ---
+        let prevAssignments = {};
         if (dayIdx > 0) {
             let prevDay = dayOrder[dayIdx - 1];
             let prev = results[prevDay];
-            if (prev && prev.tco) {
-                prev.tco.forEach(n => { if (n) prevTCOset.add(n); });
+            if (prev) {
+                prev.ab && prev.ab.forEach(n => { if (n) prevAssignments[n] = 'ab'; });
+                prev.cd && prev.cd.forEach(n => { if (n) prevAssignments[n] = 'cd'; });
+                prev.tco && prev.tco.forEach(n => { if (n) prevAssignments[n] = 'tco'; });
             }
         }
-        // --- Fill A/B and C/D slots 1 and 2, prioritize previous TCO names ---
+        // --- Fill A/B and C/D slots 1 and 2, avoid previous day's group ---
         let abFill = ab0filled ? 1 : 0;
         let cdFill = cd0filled ? 1 : 0;
-        // Prioritize previous TCO names for A/B and C/D
-        let abPriority = fillNames.filter(n => prevTCOset.has(n));
-        let cdPriority = fillNames.filter(n => prevTCOset.has(n) && !abPriority.includes(n));
-        let abRest = fillNames.filter(n => !prevTCOset.has(n));
-        let cdRest = abRest;
-        let abCandidates = abPriority.concat(abRest);
-        let cdCandidates = cdPriority.concat(cdRest);
         let abIdx = 0, cdIdx = 0;
-        for (; abFill < 2 && abIdx < abCandidates.length; abFill++, abIdx++) {
-            let name = abCandidates[abIdx];
-            if (!assignedNames.has(name)) {
-                ab[abFill] = name;
-                abPositions[day][name] = abFill;
-                usedNames.add(name);
-                assignedNames.add(name);
-            } else {
-                abFill--;
-            }
-        }
-        for (; cdFill < 2 && cdIdx < cdCandidates.length; cdFill++, cdIdx++) {
-            let name = cdCandidates[cdIdx];
-            if (!assignedNames.has(name)) {
-                cd[cdFill] = name;
-                cdPositions[day][name] = cdFill;
-                usedNames.add(name);
-                assignedNames.add(name);
-            } else {
-                cdFill--;
-            }
-        }
-        // --- Fill TCO, avoid consecutive days unless necessary ---
-        let tcoFill = 0;
-        let tcoCandidates = fillNames.filter(n => !assignedNames.has(n) && !prevTCOset.has(n));
-        let tcoFallback = fillNames.filter(n => !assignedNames.has(n) && prevTCOset.has(n));
-        for (let i = 0; i < tcoCandidates.length && tcoFill < 2; i++) {
-            tco[tcoFill] = tcoCandidates[i];
-            tcoPositions[day][tcoCandidates[i]] = tcoFill;
-            usedNames.add(tcoCandidates[i]);
-            assignedNames.add(tcoCandidates[i]);
-            tcoFill++;
-        }
-        for (let i = 0; i < tcoFallback.length && tcoFill < 2; i++) {
-            tco[tcoFill] = tcoFallback[i];
-            tcoPositions[day][tcoFallback[i]] = tcoFill;
-            usedNames.add(tcoFallback[i]);
-            assignedNames.add(tcoFallback[i]);
-            tcoFill++;
-        }
-        // --- Fill remaining A/B and C/D slots ---
-        abFill = ab.indexOf(null);
-        if (abFill === -1) abFill = 2;
-        cdFill = cd.indexOf(null);
-        if (cdFill === -1) cdFill = 2;
-        let restNames = fillNames.filter(n => !assignedNames.has(n));
-        let toggle = true;
-        let idx = 0;
-        while ((abFill < 4 || cdFill < 4) && idx < restNames.length) {
-            let name = restNames[idx];
-            if (abFill < 4 && toggle) {
+        while (abFill < 2 && abIdx < fillNames.length) {
+            let name = fillNames[abIdx];
+            if (!assignedNames.has(name) && prevAssignments[name] !== 'ab') {
                 ab[abFill] = name;
                 abPositions[day][name] = abFill;
                 usedNames.add(name);
                 assignedNames.add(name);
                 abFill++;
-            } else if (cdFill < 4) {
+            }
+            abIdx++;
+        }
+        while (cdFill < 2 && cdIdx < fillNames.length) {
+            let name = fillNames[cdIdx];
+            if (!assignedNames.has(name) && prevAssignments[name] !== 'cd') {
                 cd[cdFill] = name;
                 cdPositions[day][name] = cdFill;
                 usedNames.add(name);
                 assignedNames.add(name);
                 cdFill++;
+            }
+            cdIdx++;
+        }
+        // --- Fill TCO, avoid previous day's TCO ---
+        let tcoFill = 0;
+        let tcoIdx = 0;
+        while (tcoFill < 2 && tcoIdx < fillNames.length) {
+            let name = fillNames[tcoIdx];
+            if (!assignedNames.has(name) && prevAssignments[name] !== 'tco') {
+                tco[tcoFill] = name;
+                tcoPositions[day][name] = tcoFill;
+                usedNames.add(name);
+                assignedNames.add(name);
+                tcoFill++;
+            }
+            tcoIdx++;
+        }
+        // --- Fill remaining A/B, C/D, TCO slots with any unassigned names ---
+        let restNames = fillNames.filter(n => !assignedNames.has(n));
+        let abRest = ab.indexOf(null);
+        if (abRest === -1) abRest = 2;
+        let cdRest = cd.indexOf(null);
+        if (cdRest === -1) cdRest = 2;
+        let tcoRest = tco.indexOf(null);
+        if (tcoRest === -1) tcoRest = 2;
+        let toggle = true;
+        let idx = 0;
+        while ((abRest < 4 || cdRest < 4 || tcoRest < 2) && idx < restNames.length) {
+            let name = restNames[idx];
+            if (abRest < 4 && toggle) {
+                ab[abRest] = name;
+                abPositions[day][name] = abRest;
+                usedNames.add(name);
+                assignedNames.add(name);
+                abRest++;
+            } else if (cdRest < 4 && !toggle) {
+                cd[cdRest] = name;
+                cdPositions[day][name] = cdRest;
+                usedNames.add(name);
+                assignedNames.add(name);
+                cdRest++;
+            } else if (tcoRest < 2) {
+                tco[tcoRest] = name;
+                tcoPositions[day][name] = tcoRest;
+                usedNames.add(name);
+                assignedNames.add(name);
+                tcoRest++;
             }
             toggle = !toggle;
             idx++;
@@ -178,51 +181,100 @@
     return results;
 }
 
-	document.getElementById('namesForm').addEventListener('submit', function(e) {
-		e.preventDefault();
-		const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-		const groupSizes = { ab: 4, cd: 4, tco: 2 };
-		let html = '';
-		let valid = false;
-		let dayNames = {};
-		days.forEach(day => {
-			const namesRaw = document.getElementById('namesInput-' + day).value;
-			let names = namesRaw.split(/[\n,]+/).map(n => n.trim()).filter(n => n);
-			if (names.length === 0) return; // skip empty days
-			if (names.length < 2 || names.length > 20) {
-				html += `<div class='day-group'><h2>${day}</h2><div class='error'>Please enter between 2 and 20 names for ${day}.</div></div>`;
-				return;
-			}
-			valid = true;
-			dayNames[day] = names;
-		});
-		if (valid) {
-			const assignments = assignGroupsForWeek(dayNames, groupSizes);
-			days.forEach(day => {
-				if (!dayNames[day]) return;
-				const { ab, cd, tco } = assignments[day];
-					html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
-					// Always show 4 slots for A/B and C/D
-					html += `<div class=\"group\"><strong>A/B</strong><ol>${Array.from({length: 4}, (_,i) => ab[i] ? `<li>${ab[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
-					html += `<div class=\"group\"><strong>C/D</strong><ol>${Array.from({length: 4}, (_,i) => cd[i] ? `<li>${cd[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
-					html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+let scheduleGenerations = [];
+let currentGeneration = 0;
 
-					// Show unused names
-					const usedNames = new Set([...ab, ...cd, ...tco].filter(Boolean));
-					const allNames = dayNames[day];
-					const unused = allNames.filter(n => !usedNames.has(n));
-					if (unused.length > 0) {
-						html += `<div class=\"group unused-names\"><strong>Unused</strong><ol>${unused.map(n=>`<li>${n}</li>`).join('')}</ol></div>`;
-					}
+function renderSchedule(html) {
+    // Show the most recent generation at the top, previous generations below
+    let allHtml = '';
+        // Show only the most recent 4 generations (current + up to 3 previous)
+        let start = Math.max(0, scheduleGenerations.length - 4);
+        for (let i = scheduleGenerations.length - 1; i >= start; i--) {
+        allHtml += `<div class="generation-block${i === scheduleGenerations.length - 1 ? ' current-generation' : ''}">`;
+        if (i === scheduleGenerations.length - 1) {
+            allHtml += `<div class="gen-label">Current Generation</div>`;
+        } else {
+            allHtml += `<div class="gen-label">Previous Generation ${scheduleGenerations.length - i}</div>`;
+        }
+        allHtml += scheduleGenerations[i];
+        allHtml += '</div>';
+    }
+    document.getElementById('results').innerHTML = allHtml;
+    document.getElementById('generationCounter').textContent = `Generation: ${currentGeneration + 1} / ${scheduleGenerations.length}`;
+}
 
-					html += `</div></div>`;
-			});
-		}
-		if (!valid) {
-			html = '<div class="error">Please enter at least one valid list of names for a day.</div>';
-		}
-		document.getElementById('results').innerHTML = html;
-	});
+function showGeneration(index) {
+    if (index >= 0 && index < scheduleGenerations.length) {
+        currentGeneration = index;
+        renderSchedule(scheduleGenerations[index]);
+    }
+}
+
+document.getElementById('namesForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const groupSizes = { ab: 4, cd: 4, tco: 2 };
+    let html = '';
+    let valid = false;
+    let dayNames = {};
+    days.forEach(day => {
+        const namesRaw = document.getElementById('namesInput-' + day).value;
+        let names = namesRaw.split(/[\n,]+/).map(n => n.trim()).filter(n => n);
+        if (names.length === 0) return; // skip empty days
+        if (names.length < 2 || names.length > 20) {
+            html += `<div class='day-group'><h2>${day}</h2><div class='error'>Please enter between 2 and 20 names for ${day}.</div></div>`;
+            return;
+        }
+        valid = true;
+        dayNames[day] = names;
+    });
+    if (valid) {
+        const assignments = assignGroupsForWeek(dayNames, groupSizes);
+        days.forEach(day => {
+            if (!dayNames[day]) return;
+            const { ab, cd, tco } = assignments[day];
+            html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
+            html += `<div class=\"group\"><strong>A/B</strong><ol>${Array.from({length: 4}, (_,i) => ab[i] ? `<li>${ab[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
+            html += `<div class=\"group\"><strong>C/D</strong><ol>${Array.from({length: 4}, (_,i) => cd[i] ? `<li>${cd[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
+            html += `<div class=\"group\"><strong>TCO</strong><ol>${tco.map((n,i)=>n?`<li>${n}</li>`:'<li>-</li>').join('')}</ol></div>`;
+            const usedNames = new Set([...ab, ...cd, ...tco].filter(Boolean));
+            const allNames = dayNames[day];
+            const unused = allNames.filter(n => !usedNames.has(n));
+            if (unused.length > 0) {
+                html += `<div class=\"group unused-names\"><strong>Unused</strong><ol>${unused.map(n=>`<li>${n}</li>`).join('')}</ol></div>`;
+            }
+            html += `</div></div>`;
+        });
+    }
+    if (!valid) {
+        html = '<div class="error">Please enter at least one valid list of names for a day.</div>';
+    }
+    // Store this generation, keep only the most recent 4
+    if (scheduleGenerations.length >= 4) {
+        scheduleGenerations.shift(); // Remove the oldest
+    }
+    scheduleGenerations.push(html);
+    currentGeneration = scheduleGenerations.length - 1;
+    renderSchedule(html);
+});
+
+// Add navigation controls
+window.addEventListener('DOMContentLoaded', function() {
+    const navDiv = document.createElement('div');
+    navDiv.style.margin = '10px 0';
+    navDiv.innerHTML = `
+        <button id="prevGen">Previous</button>
+        <span id="generationCounter">Generation: 0 / 0</span>
+        <button id="nextGen">Next</button>
+    `;
+    document.querySelector('.container').appendChild(navDiv);
+    document.getElementById('prevGen').onclick = function() {
+        if (currentGeneration > 0) showGeneration(currentGeneration - 1);
+    };
+    document.getElementById('nextGen').onclick = function() {
+        if (currentGeneration < scheduleGenerations.length - 1) showGeneration(currentGeneration + 1);
+    };
+});
 	</script>
 </body>
 </html>
