@@ -230,6 +230,7 @@ document.getElementById('namesForm').addEventListener('submit', function(e) {
     });
     if (valid) {
         const assignments = assignGroupsForWeek(dayNames, groupSizes);
+        html += '<div class="days-output-row">';
         days.forEach(day => {
             if (!dayNames[day]) return;
             const { ab, cd, tco } = assignments[day];
@@ -245,6 +246,7 @@ document.getElementById('namesForm').addEventListener('submit', function(e) {
             }
             html += `</div></div>`;
         });
+        html += '</div>';
     }
     if (!valid) {
         html = '<div class="error">Please enter at least one valid list of names for a day.</div>';
