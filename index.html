@@ -27,7 +27,7 @@
 			<button type="submit">Generate Schedule</button>
 			<button type="button" id="clearHistory" onclick="clearGenerationHistory()">Clear History</button>
 		</form>
-		<div id="results" class="results"></div>
+		<div id="results-wrapper" class="results-row"><div id="results" class="results"></div></div>
 	</div>
 	<script>
 	// Helper: shuffle array
@@ -47,71 +47,10 @@
 		const abPositions = {};
 		const cdPositions = {};
 		const tcoPositions = {};
-		const previousGroupAssignments = {}; // Track which group type each person was in previously
-		const tcoWeeklyCount = {}; // Track how many times each person has been in TCO this week
 		const results = {};
-		
-		const daysOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-		const orderedDays = daysOrder.filter(day => dayNames[day]);
-		
-		orderedDays.forEach(day => {
+		Object.keys(dayNames).forEach(day => {
 			const names = dayNames[day];
 			let shuffled = shuffle([...names]);
-			// Prioritize people who weren't in the same group type yesterday
-			// Group people by their previous assignment to encourage alternation
-			let tcoPreferred = [];
-			let abPreferred = [];
-			let cdPreferred = [];
-			let unassigned = [];
-			
-			shuffled.forEach(name => {
-				const prevGroup = previousGroupAssignments[name];
-				const tcoCount = tcoWeeklyCount[name] || 0;
-				const hasSlash = name.includes('/');
-				
-				if (!prevGroup) {
-					unassigned.push(name);
-				} else if (prevGroup === 'tco') {
-					// If they were in TCO, prefer A/B or C/D
-					abPreferred.push(name);
-				} else if (prevGroup === 'ab') {
-					// If they were in A/B
-					if (hasSlash) {
-						// Names with "/" should alternate to C/D
-						cdPreferred.push(name);
-					} else if (tcoCount < 2) {
-						// Regular names prefer TCO or C/D
-						tcoPreferred.push(name);
-					} else {
-						cdPreferred.push(name);
-					}
-				} else if (prevGroup === 'cd') {
-					// If they were in C/D
-					if (hasSlash) {
-						// Names with "/" should alternate to A/B
-						abPreferred.push(name);
-					} else if (tcoCount < 2) {
-						// Regular names prefer TCO or A/B
-						tcoPreferred.push(name);
-					} else {
-						abPreferred.push(name);
-					}
-				}
-			});
-			
-			// Shuffle each preference group and filter by TCO weekly limit and slash restriction
-			tcoPreferred = shuffle(tcoPreferred.filter(name => (tcoWeeklyCount[name] || 0) < 2 && !name.includes('/')));
-			abPreferred = shuffle(abPreferred);
-			cdPreferred = shuffle(cdPreferred);
-			// For unassigned, prioritize those who can still be in TCO (no slash and under limit)
-			let unassignedTcoEligible = unassigned.filter(name => (tcoWeeklyCount[name] || 0) < 2 && !name.includes('/'));
-			let unassignedTcoIneligible = unassigned.filter(name => (tcoWeeklyCount[name] || 0) >= 2 || name.includes('/'));
-			unassignedTcoEligible = shuffle(unassignedTcoEligible);
-			unassignedTcoIneligible = shuffle(unassignedTcoIneligible);
-			
-			// Combine into assignment priority order (TCO-eligible people first for TCO assignments)
-			let assignmentOrder = [...tcoPreferred, ...unassignedTcoEligible, ...abPreferred, ...cdPreferred, ...unassignedTcoIneligible];
-			
 			// Prioritize filling slot 1&2 of A/B and C/D, then slot 1 of TCO
 			let ab = Array(4).fill(null);
 			let cd = Array(4).fill(null);
@@ -119,7 +58,6 @@
 			if (!abPositions[day]) abPositions[day] = {};
 			if (!cdPositions[day]) cdPositions[day] = {};
 			if (!tcoPositions[day]) tcoPositions[day] = {};
-			
 			// Build used position maps
 			let abUsed = {};
 			let cdUsed = {};
@@ -143,265 +81,54 @@
 				});
 			});
 
-			// Step 1: Fill TCO first (2 slots) with people who weren't in TCO yesterday
-			// and haven't exceeded the weekly TCO limit of 2 and don't have "/" in their name
-			let nameIdx = 0;
+			// Step 1: Fill ab[0], ab[1], cd[0], cd[1]
 			let usedNames = new Set();
-			
-			for (let i = 0; i < 2 && assignmentOrder.length > 0; i++) {
-				let assigned = false;
-				// Look for someone who wasn't in TCO yesterday, is under the weekly limit, and has no "/"
-				for (let j = 0; j < assignmentOrder.length; j++) {
-					const name = assignmentOrder[j];
-					const tcoCount = tcoWeeklyCount[name] || 0;
-					if (!name.includes('/') && previousGroupAssignments[name] !== 'tco' && tcoCount < 2) {
-						tco[i] = name;
-						tcoPositions[day][name] = i;
-						usedNames.add(name);
-						previousGroupAssignments[name] = 'tco';
-						tcoWeeklyCount[name] = tcoCount + 1;
-						// Remove from assignment order
-						assignmentOrder.splice(j, 1);
-						assigned = true;
-						break;
-					}
-				}
-				if (!assigned) {
-					// Fall back to anyone under the weekly limit and without "/"
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						const tcoCount = tcoWeeklyCount[name] || 0;
-						if (!name.includes('/') && tcoCount < 2) {
-							tco[i] = name;
-							tcoPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'tco';
-							tcoWeeklyCount[name] = tcoCount + 1;
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-				}
-				// Final fallback: assign anyone without "/" (ignoring weekly limit only as last resort)
-				if (!assigned) {
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (!name.includes('/')) {
-							tco[i] = name;
-							tcoPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'tco';
-							tcoWeeklyCount[name] = (tcoWeeklyCount[name] || 0) + 1;
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
+			let nameIdx = 0;
+			// Fill A/B and C/D slots 1 and 2 in order
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					ab[i] = shuffled[nameIdx];
+					abPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
 				}
 			}
-			
-			// Step 2: Fill A/B slots 1 and 2 with people who weren't in A/B yesterday
-			// Prioritize names with "/" for slot 0 (first slot)
-			for (let i = 0; i < 2 && assignmentOrder.length > 0; i++) {
-				let assigned = false;
-				
-				if (i === 0) {
-					// For first slot, prioritize names containing "/" who were in C/D yesterday (alternating)
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (name.includes('/') && previousGroupAssignments[name] === 'cd') {
-							ab[i] = name;
-							abPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'ab';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-					// If no alternating "/" names, prioritize any "/" names for first slot
-					if (!assigned) {
-						for (let j = 0; j < assignmentOrder.length; j++) {
-							const name = assignmentOrder[j];
-							if (name.includes('/') && previousGroupAssignments[name] !== 'ab') {
-								ab[i] = name;
-								abPositions[day][name] = i;
-								usedNames.add(name);
-								previousGroupAssignments[name] = 'ab';
-								assignmentOrder.splice(j, 1);
-								assigned = true;
-								break;
-							}
-						}
-					}
-					// Final fallback for first slot: any "/" name
-					if (!assigned) {
-						for (let j = 0; j < assignmentOrder.length; j++) {
-							const name = assignmentOrder[j];
-							if (name.includes('/')) {
-								ab[i] = name;
-								abPositions[day][name] = i;
-								usedNames.add(name);
-								previousGroupAssignments[name] = 'ab';
-								assignmentOrder.splice(j, 1);
-								assigned = true;
-								break;
-							}
-						}
-					}
-				} else {
-					// For second slot, prioritize "/" names alternating from C/D
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (name.includes('/') && previousGroupAssignments[name] === 'cd') {
-							ab[i] = name;
-							abPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'ab';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-				}
-				
-				// Standard assignment logic for non-first slots or if no "/" names available
-				if (!assigned) {
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (previousGroupAssignments[name] !== 'ab') {
-							ab[i] = name;
-							abPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'ab';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-				}
-				if (!assigned && assignmentOrder.length > 0) {
-					const name = assignmentOrder[0];
-					ab[i] = name;
-					abPositions[day][name] = i;
-					usedNames.add(name);
-					previousGroupAssignments[name] = 'ab';
-					assignmentOrder.splice(0, 1);
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					cd[i] = shuffled[nameIdx];
+					cdPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
 				}
 			}
-			
-			// Step 3: Fill C/D slots 1 and 2 with people who weren't in C/D yesterday
-			// Prioritize names with "/" for slot 0 (first slot)
-			for (let i = 0; i < 2 && assignmentOrder.length > 0; i++) {
-				let assigned = false;
-				
-				if (i === 0) {
-					// For first slot, prioritize names containing "/" who were in A/B yesterday (alternating)
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (name.includes('/') && previousGroupAssignments[name] === 'ab') {
-							cd[i] = name;
-							cdPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'cd';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-					// If no alternating "/" names, prioritize any "/" names for first slot
-					if (!assigned) {
-						for (let j = 0; j < assignmentOrder.length; j++) {
-							const name = assignmentOrder[j];
-							if (name.includes('/') && previousGroupAssignments[name] !== 'cd') {
-								cd[i] = name;
-								cdPositions[day][name] = i;
-								usedNames.add(name);
-								previousGroupAssignments[name] = 'cd';
-								assignmentOrder.splice(j, 1);
-								assigned = true;
-								break;
-							}
-						}
-					}
-					// Final fallback for first slot: any "/" name
-					if (!assigned) {
-						for (let j = 0; j < assignmentOrder.length; j++) {
-							const name = assignmentOrder[j];
-							if (name.includes('/')) {
-								cd[i] = name;
-								cdPositions[day][name] = i;
-								usedNames.add(name);
-								previousGroupAssignments[name] = 'cd';
-								assignmentOrder.splice(j, 1);
-								assigned = true;
-								break;
-							}
-						}
-					}
-				} else {
-					// For second slot, prioritize "/" names alternating from A/B
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (name.includes('/') && previousGroupAssignments[name] === 'ab') {
-							cd[i] = name;
-							cdPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'cd';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-				}
-				
-				// Standard assignment logic for non-first slots or if no "/" names available
-				if (!assigned) {
-					for (let j = 0; j < assignmentOrder.length; j++) {
-						const name = assignmentOrder[j];
-						if (previousGroupAssignments[name] !== 'cd') {
-							cd[i] = name;
-							cdPositions[day][name] = i;
-							usedNames.add(name);
-							previousGroupAssignments[name] = 'cd';
-							assignmentOrder.splice(j, 1);
-							assigned = true;
-							break;
-						}
-					}
-				}
-				if (!assigned && assignmentOrder.length > 0) {
-					const name = assignmentOrder[0];
-					cd[i] = name;
-					cdPositions[day][name] = i;
-					usedNames.add(name);
-					previousGroupAssignments[name] = 'cd';
-					assignmentOrder.splice(0, 1);
+			// Fill both TCO slots in order
+			for (let i = 0; i < 2; i++) {
+				if (nameIdx < shuffled.length) {
+					tco[i] = shuffled[nameIdx];
+					tcoPositions[day][shuffled[nameIdx]] = i;
+					usedNames.add(shuffled[nameIdx]);
+					nameIdx++;
 				}
 			}
-			
-			// Step 4: Fill remaining A/B and C/D slots alternating
+			// Split remaining names evenly between A/B and C/D (slots 3 and 4), filling in order
 			let abFill = 2;
 			let cdFill = 2;
 			let toggle = true;
-			while (assignmentOrder.length > 0 && (abFill < 4 || cdFill < 4)) {
+			while (nameIdx < shuffled.length && (abFill < 4 || cdFill < 4)) {
 				if (abFill < 4 && toggle) {
-					const name = assignmentOrder[0];
-					ab[abFill] = name;
-					abPositions[day][name] = abFill;
-					usedNames.add(name);
-					previousGroupAssignments[name] = 'ab';
+					ab[abFill] = shuffled[nameIdx];
+					abPositions[day][shuffled[nameIdx]] = abFill;
+					usedNames.add(shuffled[nameIdx]);
 					abFill++;
-					assignmentOrder.splice(0, 1);
+					nameIdx++;
 				} else if (cdFill < 4) {
-					const name = assignmentOrder[0];
-					cd[cdFill] = name;
-					cdPositions[day][name] = cdFill;
-					usedNames.add(name);
-					previousGroupAssignments[name] = 'cd';
+					cd[cdFill] = shuffled[nameIdx];
+					cdPositions[day][shuffled[nameIdx]] = cdFill;
+					usedNames.add(shuffled[nameIdx]);
 					cdFill++;
-					assignmentOrder.splice(0, 1);
+					nameIdx++;
+				} else {
+					toggle = !toggle;
 				}
 				toggle = !toggle;
 			}
@@ -430,51 +157,10 @@
 		});
 		if (valid) {
 			const assignments = assignGroupsForWeek(dayNames, groupSizes);
-			
-			// Get previous generations from localStorage
-			let previousGenerations = [];
-			try {
-				const stored = localStorage.getItem('scheduleGenerations');
-				if (stored) {
-					previousGenerations = JSON.parse(stored);
-				}
-			} catch (e) {
-				previousGenerations = [];
-			}
-			
-			// Add current generation to the list
-			const currentGeneration = {
-				timestamp: new Date().toLocaleString(),
-				assignments: assignments,
-				dayNames: dayNames
-			};
-			previousGenerations.unshift(currentGeneration);
-			
-			// Keep only the last 4 generations
-			if (previousGenerations.length > 4) {
-				previousGenerations = previousGenerations.slice(0, 4);
-			}
-			
-			// Store updated generations
-			try {
-				localStorage.setItem('scheduleGenerations', JSON.stringify(previousGenerations));
-			} catch (e) {
-				// If localStorage fails, continue without storing
-			}
-			
-			// Display all generations
-			html += `<div class="generations-wrapper">`;
-			previousGenerations.forEach((generation, genIndex) => {
-				const isLatest = genIndex === 0;
-				const generationLabel = isLatest ? 'Latest Generation' : `Generation ${genIndex + 1}`;
-				
-				html += `<div class="generation-container">`;
-				html += `<h2 class="generation-title">${generationLabel}${isLatest ? '' : ` (${generation.timestamp})`}</h2>`;
-				
-				days.forEach(day => {
-					if (!generation.dayNames[day]) return;
-					const { ab, cd, tco } = generation.assignments[day];
-					html += `<div class=\"day-white-box\"><div class=\"day-group\"><h3>${day}</h3>`;
+			days.forEach(day => {
+				if (!dayNames[day]) return;
+				const { ab, cd, tco } = assignments[day];
+					html += `<div class=\"day-white-box\"><div class=\"day-group\"><h2>${day}</h2>`;
 					// Always show 4 slots for A/B and C/D
 					html += `<div class=\"group\"><strong>A/B</strong><ol>${Array.from({length: 4}, (_,i) => ab[i] ? `<li>${ab[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
 					html += `<div class=\"group\"><strong>C/D</strong><ol>${Array.from({length: 4}, (_,i) => cd[i] ? `<li>${cd[i]}</li>` : '<li>-</li>').join('')}</ol></div>`;
@@ -482,34 +168,20 @@
 
 					// Show unused names
 					const usedNames = new Set([...ab, ...cd, ...tco].filter(Boolean));
-					const allNames = generation.dayNames[day];
+					const allNames = dayNames[day];
 					const unused = allNames.filter(n => !usedNames.has(n));
 					if (unused.length > 0) {
 						html += `<div class=\"group unused-names\"><strong>Unused</strong><ol>${unused.map(n=>`<li>${n}</li>`).join('')}</ol></div>`;
 					}
 
 					html += `</div></div>`;
-				});
-				
-				html += `</div>`;
 			});
-			html += `</div>`;
 		}
 		if (!valid) {
 			html = '<div class="error">Please enter at least one valid list of names for a day.</div>';
 		}
 		document.getElementById('results').innerHTML = html;
 	});
-
-	// Function to clear generation history
-	function clearGenerationHistory() {
-		try {
-			localStorage.removeItem('scheduleGenerations');
-			document.getElementById('results').innerHTML = '<div style="color: #4da3ff; text-align: center; padding: 20px;">Generation history cleared. Generate a new schedule to begin fresh.</div>';
-		} catch (e) {
-			console.error('Error clearing history:', e);
-		}
-	}
 	</script>
 </body>
 </html>
