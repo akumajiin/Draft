@@ -40,168 +40,196 @@
 	}
 
 	// Assign groups for the week, ensuring no name is in the same position more than once
-	// and no name is in the same group type (TCO, A/B, C/D) consecutively
-	// and no name gets assigned to TCO more than 2 times per week
-	function assignGroupsForWeek(dayNames, groupSizes) {
-		// For each day, assign groups so that no name is in the same position twice that week
-		const abPositions = {};
-		const cdPositions = {};
-		const tcoPositions = {};
-		const tcoWeeklyCount = {}; // Track how many times each person has been in TCO this week
-		const results = {};
-		
-		// Process days in order to properly track weekly TCO counts
-		const daysOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-		const orderedDays = daysOrder.filter(day => dayNames[day]);
-		
-		orderedDays.forEach(day => {
-			const names = dayNames[day];
-			let shuffled = shuffle([...names]);
-			
-			// SPECIAL HANDLING: Names with "/" get priority for position 1 (index 0) in A/B or C/D
-			let slashNames = shuffled.filter(name => name.includes('/'));
-			let regularNames = shuffled.filter(name => !name.includes('/'));
-			
-			// Prioritize filling slot 1&2 of A/B and C/D, then slot 1 of TCO
-			let ab = Array(4).fill(null);
-			let cd = Array(4).fill(null);
-			let tco = Array(2).fill(null);
-			if (!abPositions[day]) abPositions[day] = {};
-			if (!cdPositions[day]) cdPositions[day] = {};
-			if (!tcoPositions[day]) tcoPositions[day] = {};
-			
-			// Step 0: Assign names with "/" to position 1 (index 0) of A/B or C/D
-			let slashAssigned = 0;
-			slashNames.forEach(name => {
-				if (slashAssigned === 0 && ab[0] === null) {
-					ab[0] = name;
-					abPositions[day][name] = 0;
-					slashAssigned++;
-				} else if (slashAssigned === 1 && cd[0] === null) {
-					cd[0] = name;
-					cdPositions[day][name] = 0;
-					slashAssigned++;
-				} else if (ab[0] === null) {
-					ab[0] = name;
-					abPositions[day][name] = 0;
-				} else if (cd[0] === null) {
-					cd[0] = name;
-					cdPositions[day][name] = 0;
-				}
-			});
-			
-			// Continue with existing logic using only regular names
-			shuffled = shuffle(regularNames);
-			// Prioritize filling slot 1&2 of A/B and C/D, then slot 1 of TCO
-			if (!abPositions[day]) abPositions[day] = {};
-			if (!cdPositions[day]) cdPositions[day] = {};
-			if (!tcoPositions[day]) tcoPositions[day] = {};
-			// Build used position maps
-			let abUsed = {};
-			let cdUsed = {};
-			let tcoUsed = {};
-			Object.keys(abPositions).forEach(d => {
-				Object.entries(abPositions[d]).forEach(([name, pos]) => {
-					abUsed[name] = abUsed[name] || new Set();
-					abUsed[name].add(pos);
-				});
-			});
-			Object.keys(cdPositions).forEach(d => {
-				Object.entries(cdPositions[d]).forEach(([name, pos]) => {
-					cdUsed[name] = cdUsed[name] || new Set();
-					cdUsed[name].add(pos);
-				});
-			});
-			Object.keys(tcoPositions).forEach(d => {
-				Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
-					tcoUsed[name] = tcoUsed[name] || new Set();
-					tcoUsed[name].add(pos);
-				});
-			});
+    // and no name is in the same group type (TCO, A/B, C/D) consecutively
+    // and no name gets assigned to TCO more than 2 times per week
+    // EXCEPTION: Names with "/" follow separate rules - alternate A/B<->C/D, TCO 1 day per week, always first slot
+    function assignGroupsForWeek(dayNames, groupSizes) {
+        // For each day, assign groups so that no name is in the same position twice that week
+        const abPositions = {};
+        const cdPositions = {};
+        const tcoPositions = {};
+        const tcoWeeklyCount = {}; // Track how many times each person has been in TCO this week
+        const slashTcoWeeklyCount = {}; // Track TCO for slash names separately
+        const slashLastAssignment = {}; // Track last assignment for slash names to ensure alternation
+        const results = {};
+        
+        // Process days in order to properly track weekly TCO counts and slash alternation
+        const daysOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+        const orderedDays = daysOrder.filter(day => dayNames[day]);
+        
+        orderedDays.forEach(day => {
+            const names = dayNames[day];
+            let shuffled = shuffle([...names]);
+            
+            // SPECIAL HANDLING: Names with "/" follow exception rules
+            let slashNames = shuffled.filter(name => name.includes('/'));
+            let regularNames = shuffled.filter(name => !name.includes('/'));
+            
+            // Initialize arrays
+            let ab = Array(4).fill(null);
+            let cd = Array(4).fill(null);
+            let tco = Array(2).fill(null);
+            if (!abPositions[day]) abPositions[day] = {};
+            if (!cdPositions[day]) cdPositions[day] = {};
+            if (!tcoPositions[day]) tcoPositions[day] = {};
+            
+            // Step 0: Handle names with "/" according to exception rules
+            slashNames.forEach(name => {
+                const tcoCount = slashTcoWeeklyCount[name] || 0;
+                const lastAssignment = slashLastAssignment[name];
+                
+                // Rule 1: Each slash name must be in TCO exactly 1 day per week
+                if (tcoCount === 0 && tco[0] === null) {
+                    // Assign to TCO first slot
+                    tco[0] = name;
+                    tcoPositions[day][name] = 0;
+                    slashTcoWeeklyCount[name] = 1;
+                    slashLastAssignment[name] = 'TCO';
+                } else if (tcoCount === 0 && tco[1] === null) {
+                    // Assign to TCO second slot
+                    tco[1] = name;
+                    tcoPositions[day][name] = 1;
+                    slashTcoWeeklyCount[name] = 1;
+                    slashLastAssignment[name] = 'TCO';
+                } else {
+                    // Rule 2: Alternate between A/B and C/D, always first slot
+                    if (lastAssignment === 'A/B' || lastAssignment === 'TCO') {
+                        // Assign to C/D first slot
+                        if (cd[0] === null) {
+                            cd[0] = name;
+                            cdPositions[day][name] = 0;
+                            slashLastAssignment[name] = 'C/D';
+                        }
+                    } else {
+                        // Assign to A/B first slot (default for first assignment or after C/D)
+                        if (ab[0] === null) {
+                            ab[0] = name;
+                            abPositions[day][name] = 0;
+                            slashLastAssignment[name] = 'A/B';
+                        }
+                    }
+                }
+            });
+            
+            // Continue with existing logic using only regular names
+            shuffled = shuffle(regularNames);
+            
+            // Build used position maps for regular names only
+            let abUsed = {};
+            let cdUsed = {};
+            let tcoUsed = {};
+            Object.keys(abPositions).forEach(d => {
+                Object.entries(abPositions[d]).forEach(([name, pos]) => {
+                    if (!name.includes('/')) { // Only track regular names for position limits
+                        abUsed[name] = abUsed[name] || new Set();
+                        abUsed[name].add(pos);
+                    }
+                });
+            });
+            Object.keys(cdPositions).forEach(d => {
+                Object.entries(cdPositions[d]).forEach(([name, pos]) => {
+                    if (!name.includes('/')) { // Only track regular names for position limits
+                        cdUsed[name] = cdUsed[name] || new Set();
+                        cdUsed[name].add(pos);
+                    }
+                });
+            });
+            Object.keys(tcoPositions).forEach(d => {
+                Object.entries(tcoPositions[d]).forEach(([name, pos]) => {
+                    if (!name.includes('/')) { // Only track regular names for position limits
+                        tcoUsed[name] = tcoUsed[name] || new Set();
+                        tcoUsed[name].add(pos);
+                    }
+                });
+            });
 
-			// Step 1: Fill ab[0], ab[1], cd[0], cd[1] (skipping already filled positions)
-			let usedNames = new Set();
-			// Add already assigned slash names to usedNames
-			if (ab[0]) usedNames.add(ab[0]);
-			if (cd[0]) usedNames.add(cd[0]);
-			
-			let nameIdx = 0;
-			// Fill A/B slots 1 and 2 in order (skip slot 0 if already filled)
-			for (let i = 0; i < 2; i++) {
-				if (ab[i] === null && shuffled.length > 0) {
-					const name = shuffled.shift();
-					ab[i] = name;
-					abPositions[day][name] = i;
-					usedNames.add(name);
-				}
-			}
-			// Fill C/D slots 1 and 2 in order (skip slot 0 if already filled)
-			for (let i = 0; i < 2; i++) {
-				if (cd[i] === null && shuffled.length > 0) {
-					const name = shuffled.shift();
-					cd[i] = name;
-					cdPositions[day][name] = i;
-					usedNames.add(name);
-				}
-			}
-			// Fill both TCO slots in order, respecting weekly limit of 2 per person
-			for (let i = 0; i < 2; i++) {
-				let assigned = false;
-				// First, try to find someone who hasn't exceeded the weekly TCO limit
-				for (let j = nameIdx; j < shuffled.length; j++) {
-					const name = shuffled[j];
-					const tcoCount = tcoWeeklyCount[name] || 0;
-					if (tcoCount < 2) {
-						tco[i] = name;
-						tcoPositions[day][name] = i;
-						usedNames.add(name);
-						tcoWeeklyCount[name] = tcoCount + 1;
-						// Remove this person from shuffled array
-						shuffled.splice(j, 1);
-						assigned = true;
-						break;
-					}
-				}
-				// If no one under the limit is available, skip this TCO slot
-				if (!assigned) {
-					break;
-				}
-			}
-			// Split remaining names evenly between A/B and C/D (slots 3 and 4), filling in order
-			let abFill = ab[0] !== null ? 1 : 0; // Start from 1 if slot 0 is filled, otherwise 0
-			let cdFill = cd[0] !== null ? 1 : 0; // Start from 1 if slot 0 is filled, otherwise 0
-			
-			// Find the next available slots
-			while (abFill < 4 && ab[abFill] !== null) abFill++;
-			while (cdFill < 4 && cd[cdFill] !== null) cdFill++;
-			
-			let toggle = true;
-			while (shuffled.length > 0 && (abFill < 4 || cdFill < 4)) {
-				if (abFill < 4 && toggle) {
-					const name = shuffled.shift();
-					ab[abFill] = name;
-					abPositions[day][name] = abFill;
-					usedNames.add(name);
-					abFill++;
-					// Find next available slot
-					while (abFill < 4 && ab[abFill] !== null) abFill++;
-				} else if (cdFill < 4) {
-					const name = shuffled.shift();
-					cd[cdFill] = name;
-					cdPositions[day][name] = cdFill;
-					usedNames.add(name);
-					cdFill++;
-					// Find next available slot
-					while (cdFill < 4 && cd[cdFill] !== null) cdFill++;
-				} else {
-					toggle = !toggle;
-				}
-				toggle = !toggle;
-			}
-			results[day] = { ab, cd, tco };
-		});
-		return results;
-	}
+            // Step 1: Fill remaining A/B and C/D slots (regular names only)
+            let usedNames = new Set();
+            // Add already assigned slash names to usedNames
+            [...ab, ...cd, ...tco].filter(Boolean).forEach(name => usedNames.add(name));
+            
+            // Fill A/B slots (skip slot 0 if filled by slash name)
+            for (let i = 0; i < 2; i++) {
+                if (ab[i] === null && shuffled.length > 0) {
+                    const name = shuffled.shift();
+                    ab[i] = name;
+                    abPositions[day][name] = i;
+                    usedNames.add(name);
+                }
+            }
+            
+            // Fill C/D slots (skip slot 0 if filled by slash name)
+            for (let i = 0; i < 2; i++) {
+                if (cd[i] === null && shuffled.length > 0) {
+                    const name = shuffled.shift();
+                    cd[i] = name;
+                    cdPositions[day][name] = i;
+                    usedNames.add(name);
+                }
+            }
+            
+            // Fill remaining TCO slots for regular names, respecting weekly limit of 2 per person
+            for (let i = 0; i < 2; i++) {
+                if (tco[i] === null) {
+                    let assigned = false;
+                    // Try to find a regular name who hasn't exceeded the weekly TCO limit
+                    for (let j = 0; j < shuffled.length; j++) {
+                        const name = shuffled[j];
+                        const tcoCount = tcoWeeklyCount[name] || 0;
+                        if (tcoCount < 2) {
+                            tco[i] = name;
+                            tcoPositions[day][name] = i;
+                            usedNames.add(name);
+                            tcoWeeklyCount[name] = tcoCount + 1;
+                            // Remove this person from shuffled array
+                            shuffled.splice(j, 1);
+                            assigned = true;
+                            break;
+                        }
+                    }
+                    // If no one under the limit is available, skip this TCO slot
+                    if (!assigned) {
+                        break;
+                    }
+                }
+            }
+            
+            // Step 2: Fill remaining A/B and C/D slots (slots 2-4) with remaining regular names
+            let abFill = 2; // Start from slot 2
+            let cdFill = 2; // Start from slot 2
+            
+            // Find the next available slots
+            while (abFill < 4 && ab[abFill] !== null) abFill++;
+            while (cdFill < 4 && cd[cdFill] !== null) cdFill++;
+            
+            let toggle = true;
+            while (shuffled.length > 0 && (abFill < 4 || cdFill < 4)) {
+                if (abFill < 4 && toggle) {
+                    const name = shuffled.shift();
+                    ab[abFill] = name;
+                    abPositions[day][name] = abFill;
+                    usedNames.add(name);
+                    abFill++;
+                    // Find next available slot
+                    while (abFill < 4 && ab[abFill] !== null) abFill++;
+                } else if (cdFill < 4) {
+                    const name = shuffled.shift();
+                    cd[cdFill] = name;
+                    cdPositions[day][name] = cdFill;
+                    usedNames.add(name);
+                    cdFill++;
+                    // Find next available slot
+                    while (cdFill < 4 && cd[cdFill] !== null) cdFill++;
+                } else {
+                    toggle = !toggle;
+                }
+                toggle = !toggle;
+            }
+            
+            results[day] = { ab, cd, tco };
+        });
+        return results;
+    }
 
 	document.getElementById('namesForm').addEventListener('submit', function(e) {
 		e.preventDefault();
